@@ -38,7 +38,8 @@ with st.sidebar:
     # Theme toggle
     col_t, col_btn = st.columns([3, 1])
     with col_t:
-        st.markdown(f"<span style='color:{C[\"SUB\"]};font-size:0.82rem'>Appearance</span>", unsafe_allow_html=True)
+        sub = C["SUB"]
+        st.markdown(f"<span style='color:{sub};font-size:0.82rem'>Appearance</span>", unsafe_allow_html=True)
     with col_btn:
         if st.button("🌙" if not st.session_state.dark_mode else "☀️", key="theme"):
             st.session_state.dark_mode = not st.session_state.dark_mode
