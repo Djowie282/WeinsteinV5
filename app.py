@@ -50,7 +50,7 @@ with st.sidebar:
     if st.session_state.logged_in:
         st.markdown(f"<span style='color:{C['SUB']};font-size:0.78rem'>Signed in as</span>", unsafe_allow_html=True)
         st.markdown(f"**{st.session_state.username}**")
-        if st.button("Sign out", use_container_width=True):
+        if st.button("Sign out", width="stretch"):
             st.session_state.logged_in = False
             st.session_state.username  = ""
             st.rerun()
@@ -100,7 +100,7 @@ if not st.session_state.logged_in:
             with st.form("login_form"):
                 username = st.text_input("Username")
                 password = st.text_input("Password", type="password")
-                submitted = st.form_submit_button("Sign in", use_container_width=True)
+                submitted = st.form_submit_button("Sign in", width="stretch")
                 if submitted:
                     if check_login(username.strip(), password):
                         st.session_state.logged_in = True
@@ -118,7 +118,7 @@ if not st.session_state.logged_in:
                 new_user = st.text_input("Choose username")
                 new_pw   = st.text_input("Choose password", type="password")
                 new_pw2  = st.text_input("Repeat password", type="password")
-                reg_sub  = st.form_submit_button("Create account", use_container_width=True)
+                reg_sub  = st.form_submit_button("Create account", width="stretch")
                 if reg_sub:
                     if not validate_invite(inv_code):
                         st.error("Invalid or already-used invite code")
@@ -141,7 +141,7 @@ else:
     st.markdown(f"<p style='color:{C['SUB']}'>Use the navigation in the sidebar to access the screener tabs.</p>", unsafe_allow_html=True)
 
     col1, col2, col3, col4 = st.columns(4)
-    col1.page_link("pages/1_Sectors.py",    label="🏦 Sector Screener", use_container_width=True)
-    col2.page_link("pages/2_Industries.py", label="🔍 Industries",      use_container_width=True)
-    col3.page_link("pages/3_All_Stocks.py", label="📋 All Stocks",       use_container_width=True)
-    col4.page_link("pages/4_Dashboard.py",  label="🔒 Dashboard",        use_container_width=True)
+    col1.page_link("pages/1_Sectors.py",    label="🏦 Sector Screener", width="stretch")
+    col2.page_link("pages/2_Industries.py", label="🔍 Industries",      width="stretch")
+    col3.page_link("pages/3_All_Stocks.py", label="📋 All Stocks",       width="stretch")
+    col4.page_link("pages/4_Dashboard.py",  label="🔒 Dashboard",        width="stretch")

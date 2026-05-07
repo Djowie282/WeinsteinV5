@@ -12,7 +12,6 @@ import numpy as np
 from datetime import datetime, timedelta
 from io import StringIO
 import json
-import time
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -38,20 +37,15 @@ BENCHMARK            = "SPY"
 def fetch_weekly(ticker: str, years: int = YEARS_OF_DATA) -> pd.DataFrame:
     end   = datetime.today()
     start = end - timedelta(weeks=years * 52 + 10)
-    for attempt in range(3):
-        try:
-            if attempt > 0:
-                time.sleep(2 * attempt)
-            df = yf.download(ticker, start=start, end=end, interval="1wk",
-                             auto_adjust=True, progress=False, threads=False)
-            if df.empty: return pd.DataFrame()
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df.dropna()
-        except Exception:
-            if attempt == 2:
-                return pd.DataFrame()
-    return pd.DataFrame()
+    try:
+        df = yf.download(ticker, start=start, end=end, interval="1wk",
+                         auto_adjust=True, progress=False, threads=False)
+        if df.empty: return pd.DataFrame()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df.dropna()
+    except Exception:
+        return pd.DataFrame()
 
 
 @st.cache_data(ttl=7*24*3600, show_spinner=False)
