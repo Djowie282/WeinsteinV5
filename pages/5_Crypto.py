@@ -39,16 +39,55 @@ BENCHMARK           = "BTC-USD"
 
 # ── CoinGecko top coins ───────────────────────────────────────
 
+# ── Hardcoded top 300 coins (fallback if CoinGecko unavailable) ──
+TOP_COINS_FALLBACK = [
+    ("btc","Bitcoin",1300e9),("eth","Ethereum",380e9),("usdt","Tether",120e9),
+    ("bnb","BNB",85e9),("sol","Solana",78e9),("xrp","XRP",73e9),
+    ("usdc","USD Coin",45e9),("doge","Dogecoin",42e9),("ada","Cardano",28e9),
+    ("avax","Avalanche",22e9),("trx","TRON",20e9),("dot","Polkadot",18e9),
+    ("link","Chainlink",16e9),("matic","Polygon",14e9),("shib","Shiba Inu",13e9),
+    ("dai","Dai",12e9),("uni","Uniswap",11e9),("atom","Cosmos",10e9),
+    ("ltc","Litecoin",9.5e9),("etc","Ethereum Classic",8e9),("near","NEAR",7.5e9),
+    ("apt","Aptos",7e9),("xlm","Stellar",6.5e9),("okb","OKB",6e9),
+    ("algo","Algorand",5.5e9),("hbar","Hedera",5e9),("fil","Filecoin",4.8e9),
+    ("arb","Arbitrum",4.5e9),("op","Optimism",4.2e9),("inj","Injective",4e9),
+    ("sui","Sui",3.8e9),("imx","Immutable",3.5e9),("vet","VeChain",3.3e9),
+    ("aave","Aave",3.1e9),("qnt","Quant",3e9),("sand","The Sandbox",2.8e9),
+    ("mana","Decentraland",2.6e9),("axs","Axie Infinity",2.5e9),("theta","Theta",2.4e9),
+    ("grt","The Graph",2.3e9),("eos","EOS",2.2e9),("xmr","Monero",2.1e9),
+    ("cake","PancakeSwap",2e9),("crv","Curve",1.9e9),("ldo","Lido",1.8e9),
+    ("egld","MultiversX",1.7e9),("ape","ApeCoin",1.6e9),("mkr","Maker",1.5e9),
+    ("xtz","Tezos",1.4e9),("rune","THORChain",1.3e9),("stx","Stacks",1.2e9),
+    ("snx","Synthetix",1.1e9),("ftm","Fantom",1e9),("neo","NEO",0.9e9),
+    ("kava","Kava",0.85e9),("flow","Flow",0.8e9),("zil","Zilliqa",0.75e9),
+    ("bat","Basic Attention",0.7e9),("1inch","1inch",0.65e9),("comp","Compound",0.6e9),
+    ("enj","Enjin",0.55e9),("chz","Chiliz",0.5e9),("hot","Holo",0.48e9),
+    ("waves","Waves",0.45e9),("iota","IOTA",0.43e9),("dash","Dash",0.42e9),
+    ("zec","Zcash",0.4e9),("ren","Ren",0.35e9),("bal","Balancer",0.33e9),
+    ("yfi","yearn.finance",0.32e9),("sushi","SushiSwap",0.3e9),("uma","UMA",0.28e9),
+    ("dgb","DigiByte",0.27e9),("sc","Siacoin",0.26e9),("zen","Horizen",0.25e9),
+    ("ont","Ontology",0.24e9),("iost","IOST",0.23e9),("nano","Nano",0.22e9),
+    ("storj","Storj",0.21e9),("lrc","Loopring",0.2e9),("ankr","Ankr",0.19e9),
+    ("celr","Celer",0.18e9),("ctsi","Cartesi",0.17e9),("band","Band",0.16e9),
+    ("reef","Reef",0.15e9),("ray","Raydium",0.14e9),("mngo","Mango",0.13e9),
+    ("sol2","Solana2",0.1e9),("tia","Celestia",3.5e9),("sei","Sei",2.5e9),
+    ("jup","Jupiter",2.2e9),("wif","dogwifhat",2e9),("bonk","Bonk",1.8e9),
+    ("pyth","Pyth",1.5e9),("jto","Jito",1.3e9),("wen","Wen",0.5e9),
+    ("blur","Blur",0.8e9),("pendle","Pendle",0.7e9),("rdnt","Radiant",0.4e9),
+    ("gmx","GMX",0.6e9),("dydx","dYdX",0.5e9),("perp","Perpetual",0.2e9),
+    ("people","ConstitutionDAO",0.3e9),("bico","Biconomy",0.25e9),
+]
+
 @st.cache_data(ttl=7*24*3600, show_spinner=False)
 def fetch_top_coins(limit: int = 300) -> list:
     """
-    Fetch top coins by market cap from CoinGecko free API.
-    Returns list of dicts with symbol, name, market_cap, etc.
+    Try CoinGecko API first, fall back to hardcoded list.
+    Returns list of dicts with symbol, name, market_cap.
     """
+    # Try CoinGecko
     coins = []
     per_page = 250
     pages = (limit // per_page) + 1
-
     for page in range(1, pages + 1):
         url = (
             f"https://api.coingecko.com/api/v3/coins/markets"
@@ -57,17 +96,29 @@ def fetch_top_coins(limit: int = 300) -> list:
             f"&page={page}&sparkline=false"
         )
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-            with urllib.request.urlopen(req, timeout=15) as r:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/json",
+            })
+            with urllib.request.urlopen(req, timeout=10) as r:
                 data = json.loads(r.read().decode("utf-8"))
-            coins += data
-            if len(coins) >= limit:
+            if isinstance(data, list) and data:
+                coins += data
+                if len(coins) >= limit: break
+                time.sleep(1.5)
+            else:
                 break
-            time.sleep(1.2)  # respect free tier rate limit
-        except Exception as e:
+        except Exception:
             break
 
-    return coins[:limit]
+    if len(coins) >= 10:
+        return coins[:limit]
+
+    # Fallback: hardcoded list
+    fallback = []
+    for sym, name, mc in TOP_COINS_FALLBACK[:limit]:
+        fallback.append({"symbol": sym, "name": name, "market_cap": mc})
+    return fallback
 
 
 def coin_to_yf(symbol: str) -> str:
