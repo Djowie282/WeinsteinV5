@@ -109,7 +109,10 @@ with st.spinner("Loading market data…"):
     spx_ev, sec_df, spx_close_json = get_spx_data()
 
 if spx_ev is None:
-    st.error("Could not load market data.")
+    st.error("Yahoo Finance is rate-limiting this server. Please wait 30 seconds and refresh the page.")
+    if st.button("🔄 Retry now"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 # ── Header ────────────────────────────────────────────────────
@@ -151,23 +154,49 @@ with ind_tab1:
 
     st.markdown(f"<p class='subtext'>Click an industry in the drill-down tab to scan its stocks.</p>", unsafe_allow_html=True)
 
+    def color_rs(v):
+        if v is None: return "–"
+        return f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%"
+
+    # Sort control
+    sort_col1, sort_col2 = st.columns([2, 2])
+    with sort_col1:
+        sort_by = st.selectbox("Sort by", ["RS 3M vs SPX", "RS 1M vs SPX", "RS 1W vs SPX", "Industry"], key="ind_sort")
+    with sort_col2:
+        sort_asc = st.toggle("Ascending", value=False, key="ind_asc")
+
     rows = []
     for ind_name, tks in FINVIZ_INDUSTRIES.items():
-        row = {"Industry": ind_name, "Stocks": len(tks)}
+        row = {"Industry": ind_name, "Stocks": len(tks), "_rs1w": None, "_rs1m": None, "_rs3m": None}
         if show_rs:
             rs1w = industry_rs(json.dumps(tks[:8]), 5)
             rs1m = industry_rs(json.dumps(tks[:8]), 21)
             rs3m = industry_rs(json.dumps(tks[:8]), 63)
-            def color_rs(v):
-                if v is None: return "–"
-                return f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%"
             row["RS 1W vs SPX"] = color_rs(rs1w)
             row["RS 1M vs SPX"] = color_rs(rs1m)
             row["RS 3M vs SPX"] = color_rs(rs3m)
+            row["_rs1w"] = rs1w or -999
+            row["_rs1m"] = rs1m or -999
+            row["_rs3m"] = rs3m or -999
         row["Top stocks"] = ", ".join(tks[:6]) + ("…" if len(tks) > 6 else "")
         rows.append(row)
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=600)
+    df_ind = pd.DataFrame(rows)
+
+    # Sort numerically using hidden columns
+    sort_map = {
+        "RS 3M vs SPX": "_rs3m",
+        "RS 1M vs SPX": "_rs1m",
+        "RS 1W vs SPX": "_rs1w",
+        "Industry":     "Industry",
+    }
+    sort_key = sort_map.get(sort_by, "_rs3m")
+    if sort_key in df_ind.columns:
+        df_ind = df_ind.sort_values(sort_key, ascending=sort_asc)
+
+    # Drop hidden numeric columns before display
+    display_cols = [c for c in df_ind.columns if not c.startswith("_")]
+    st.dataframe(df_ind[display_cols], width="stretch", hide_index=True, height=600)
 
 # ════════════════════════════
 # TAB 2: Drill-down
@@ -182,7 +211,7 @@ with ind_tab2:
                                   placeholder="e.g. NVDA, ARM, Semiconductors…")
     with btn_col:
         st.markdown("<br>", unsafe_allow_html=True)
-        do_search = st.button("Analyze", use_container_width=True)
+        do_search = st.button("Analyze", width="stretch")
 
     if search_q and do_search:
         q = search_q.strip().upper()
@@ -313,7 +342,7 @@ with ind_tab2:
         sel_ind = st.selectbox("", list(FINVIZ_INDUSTRIES.keys()),
                                key="sel_ind", label_visibility="collapsed")
     with dc2:
-        scan_btn = st.button("🔍 Scan", use_container_width=True)
+        scan_btn = st.button("🔍 Scan", width="stretch")
 
     if scan_btn:
         st.session_state["scanned_ind"] = sel_ind
@@ -357,7 +386,7 @@ with ind_tab2:
                     "Score":    f"{r['score']}/5",
                     "Signal":   sig_icon(r.to_dict()),
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
 
             # Export
             st.markdown("---")
@@ -404,7 +433,7 @@ with ind_tab3:
     with sr2:
         min_score = st.selectbox("Min score", [3,4,5], index=0, key="sig_min")
     with sr3:
-        run_scan = st.button("🔍 Scan", use_container_width=True, key="run_sig")
+        run_scan = st.button("🔍 Scan", width="stretch", key="run_sig")
     with sr4:
         nyse_toggle = st.toggle("Full NYSE+NASDAQ", value=False, key="ind_nyse")
 
@@ -442,7 +471,7 @@ with ind_tab3:
                     "Vol": fmt(r["vol"],"x",1), "Base": f"{r['base_w']}w",
                     "Cross": cross, "Stop": fmt(r["stop"]), "Risk": fmt(r["risk"],"%",1),
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=600)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=600)
             all_tks = df_nyse["ticker"].tolist()
             st.download_button("⬇️ Export all to TradingView (.txt)",
                                export_tv_lines(all_tks),
@@ -495,7 +524,7 @@ with ind_tab3:
             sm2.metric("🟢 Premium", len(sig_df[sig_df["Signal"].str.contains("PREMIUM",na=False)]))
             sm3.metric("🟡 Early",   len(sig_df[sig_df["Signal"].str.contains("EARLY",  na=False)]))
             sm4.metric("🔵 Stage 2", len(sig_df[sig_df["Signal"].str.contains("S2",     na=False)]))
-            st.dataframe(sig_df, use_container_width=True, hide_index=True, height=600)
+            st.dataframe(sig_df, width="stretch", hide_index=True, height=600)
             st.download_button("⬇️ Export all signals (.txt)",
                                export_tv_lines(sig_df["Ticker"].tolist()),
                                file_name="TV_industry_signals.txt",
