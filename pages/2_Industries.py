@@ -192,11 +192,26 @@ with ind_tab1:
     }
     sort_key = sort_map.get(sort_by, "_rs3m")
     if sort_key in df_ind.columns:
-        df_ind = df_ind.sort_values(sort_key, ascending=sort_asc)
+        df_ind = df_ind.sort_values(sort_key, ascending=sort_asc).reset_index(drop=True)
 
-    # Drop hidden numeric columns before display
+    # Replace string RS columns with numeric for proper Streamlit sorting
+    if show_rs and "_rs1w" in df_ind.columns:
+        df_ind["RS 1W vs SPX"] = df_ind["_rs1w"].apply(lambda v: round(v, 1) if v and v != -999 else None)
+        df_ind["RS 1M vs SPX"] = df_ind["_rs1m"].apply(lambda v: round(v, 1) if v and v != -999 else None)
+        df_ind["RS 3M vs SPX"] = df_ind["_rs3m"].apply(lambda v: round(v, 1) if v and v != -999 else None)
+
     display_cols = [c for c in df_ind.columns if not c.startswith("_")]
-    st.dataframe(df_ind[display_cols], width="stretch", hide_index=True, height=600)
+    st.dataframe(
+        df_ind[display_cols],
+        width="stretch",
+        hide_index=True,
+        height=600,
+        column_config={
+            "RS 1W vs SPX": st.column_config.NumberColumn("RS 1W vs SPX", format="%.1f%%"),
+            "RS 1M vs SPX": st.column_config.NumberColumn("RS 1M vs SPX", format="%.1f%%"),
+            "RS 3M vs SPX": st.column_config.NumberColumn("RS 3M vs SPX", format="%.1f%%"),
+        }
+    )
 
 # ════════════════════════════
 # TAB 2: Drill-down
