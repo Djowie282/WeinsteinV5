@@ -70,7 +70,7 @@ for _, r in sec_df.iterrows():
         "Label":    r["label"],
         "Signal":   sig_icon(r),
     })
-st.dataframe(pd.DataFrame(sec_rows), use_container_width=True, hide_index=True, height=430)
+st.dataframe(pd.DataFrame(sec_rows), width="stretch", hide_index=True, height=430)
 
 # ── Early Signals ─────────────────────────────────────────────
 st.markdown("---")
@@ -126,7 +126,7 @@ for _, sec in sec_df[sec_df["score"] >= 3].head(5).iterrows():
                     "Stage":    r["stage"],
                     "Signal":   sig_icon(r),
                 })
-            st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+            st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
             for _, r in filtered.iterrows():
                 if r.get("premium"):   master_premium.append((r.to_dict(), sec["name"]))
                 elif r.get("early_sig"): master_early.append((r.to_dict(), sec["name"]))
@@ -176,7 +176,7 @@ if ms_nyse:
                 "Vol": fmt(r["vol"],"x",1), "Base": f"{r['base_w']}w",
                 "Cross": cross, "Stop": fmt(r["stop"]), "Risk": fmt(r["risk"],"%",1),
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=550)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=550)
 
         st.markdown("---")
         ex1, ex2 = st.columns(2)
@@ -319,7 +319,7 @@ else:
                 "RS":         fmt(r["rs"],"",1),
                 "Trigger at": fmt(r["sma50w"]) + " + vol",
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=450)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=450)
 
         # Export
         s1_tks = s1_df["ticker"].tolist()

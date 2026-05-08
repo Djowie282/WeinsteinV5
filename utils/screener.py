@@ -38,19 +38,34 @@ BENCHMARK            = "SPY"
 def fetch_weekly(ticker: str, years: int = YEARS_OF_DATA) -> pd.DataFrame:
     end   = datetime.today()
     start = end - timedelta(weeks=years * 52 + 10)
-    for attempt in range(3):
+
+    # Method 1: yf.Ticker().history() — different endpoint, less rate-limited
+    for attempt in range(4):
         try:
             if attempt > 0:
-                time.sleep(2 * attempt)
+                time.sleep(3 * attempt)
+            t  = yf.Ticker(ticker)
+            df = t.history(start=start, end=end, interval="1wk", auto_adjust=True)
+            if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                return df.dropna()
+        except Exception:
+            pass
+
+    # Method 2: yf.download() fallback
+    for attempt in range(3):
+        try:
+            time.sleep(2 * (attempt + 1))
             df = yf.download(ticker, start=start, end=end, interval="1wk",
                              auto_adjust=True, progress=False, threads=False)
-            if df.empty: return pd.DataFrame()
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df.dropna()
+            if not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                return df.dropna()
         except Exception:
-            if attempt == 2:
-                return pd.DataFrame()
+            pass
+
     return pd.DataFrame()
 
 
@@ -76,7 +91,13 @@ def fetch_nyse_tickers() -> list:
 @st.cache_data(ttl=7*24*3600, show_spinner=False)
 def get_spx_data() -> tuple:
     """Return (spx_eval, sec_df, spx_close_json)"""
-    spx_df = fetch_weekly(BENCHMARK)
+    # Try up to 3 times with increasing delay
+    spx_df = pd.DataFrame()
+    for i in range(3):
+        spx_df = fetch_weekly(BENCHMARK)
+        if not spx_df.empty:
+            break
+        time.sleep(5 * (i + 1))
     if spx_df.empty:
         return None, None, None
     spx_close = spx_df["Close"]
