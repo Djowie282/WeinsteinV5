@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import json
 from utils.theme import page_config, inject_css, get_colors
+import plotly.graph_objects as go
 from utils.screener import (
     get_spx_data, scan_tickers, scan_batch, fetch_weekly, evaluate,
     SECTORS, fmt, rs_tag, sig_icon, signal_card_html,
@@ -146,72 +147,206 @@ ind_tab1, ind_tab2, ind_tab3 = st.tabs(["📊 All Industries", "🔎 Drill-down"
 # ════════════════════════════
 # TAB 1: Overview table
 # ════════════════════════════
+# ── Helper: mini stock chart ──────────────────────────────────
+@st.cache_data(ttl=7*24*3600, show_spinner=False)
+def get_stock_chart_data(ticker: str) -> pd.DataFrame:
+    from utils.screener import fetch_weekly
+    return fetch_weekly(ticker, years=5)
+
+def make_mini_chart(ticker: str, C: dict) -> go.Figure:
+    df = get_stock_chart_data(ticker)
+    if df.empty:
+        return None
+    close = df["Close"]
+    # Last 52 weeks
+    df_1y = df.iloc[-52:]
+    close_1y = df_1y["Close"]
+    dates = df_1y.index
+
+    sma50  = close.rolling(50).mean().iloc[-52:]
+    sma200 = close.rolling(200).mean().iloc[-52:]
+
+    fig = go.Figure()
+    # Candlestick or line
+    fig.add_trace(go.Scatter(
+        x=dates, y=close_1y.values,
+        mode="lines", name=ticker,
+        line=dict(color=C["BLUE"], width=1.8),
+        hovertemplate="%{x|%b %d}<br><b>$%{y:.2f}</b><extra></extra>",
+    ))
+    if not sma50.isna().all():
+        fig.add_trace(go.Scatter(
+            x=dates, y=sma50.values,
+            mode="lines", name="50w SMA",
+            line=dict(color=C["YELLOW"], width=1.2, dash="solid"),
+            hoverinfo="skip",
+        ))
+    if not sma200.isna().all():
+        fig.add_trace(go.Scatter(
+            x=dates, y=sma200.values,
+            mode="lines", name="200w SMA",
+            line=dict(color=C["RED"], width=1.2, dash="dot"),
+            hoverinfo="skip",
+        ))
+    fig.update_layout(
+        height=180, margin=dict(l=0, r=0, t=20, b=0),
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=C["TEXT"], family="Inter", size=10),
+        xaxis=dict(showgrid=False, color=C["SUB"], tickfont=dict(size=9), zeroline=False),
+        yaxis=dict(showgrid=True, gridcolor=C["BORDER"], color=C["SUB"],
+                   tickfont=dict(size=9), zeroline=False, tickprefix="$"),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=9, color=C["SUB"]),
+                    orientation="h", x=0, y=1.15),
+        hovermode="x unified",
+        showlegend=True,
+    )
+    return fig
+
 with ind_tab1:
     st.markdown("---")
-    ctrl1, ctrl2 = st.columns([4,1])
-    with ctrl2:
-        show_rs = st.toggle("Show RS columns", value=True, key="show_rs")
+    st.markdown(f"<p class='subtext'>Click a row to drill into that industry. Charts show 1Y weekly with 50w (yellow) and 200w (red) SMA.</p>", unsafe_allow_html=True)
 
-    st.markdown(f"<p class='subtext'>Click an industry in the drill-down tab to scan its stocks.</p>", unsafe_allow_html=True)
-
-    def color_rs(v):
-        if v is None: return "–"
-        return f"+{v:.1f}%" if v >= 0 else f"{v:.1f}%"
-
-    # Sort control
-    sort_col1, sort_col2 = st.columns([2, 2])
-    with sort_col1:
-        sort_by = st.selectbox("Sort by", ["RS 3M vs SPX", "RS 1M vs SPX", "RS 1W vs SPX", "Industry"], key="ind_sort")
-    with sort_col2:
+    # Controls row
+    c1, c2, c3, c4 = st.columns([2, 2, 2, 1])
+    with c1:
+        sort_by  = st.selectbox("Sort by", ["RS 3M vs SPX","RS 1M vs SPX","RS 1W vs SPX","Industry"], key="ind_sort")
+    with c2:
+        rs_filter = st.selectbox("Filter", ["All industries","Positive RS 3M only","RS 3M > 5%","RS 3M > 10%","Negative RS 3M"], key="ind_filter")
+    with c3:
         sort_asc = st.toggle("Ascending", value=False, key="ind_asc")
+    with c4:
+        show_rs  = st.toggle("RS columns", value=True, key="show_rs")
 
+    # Build data
     rows = []
     for ind_name, tks in FINVIZ_INDUSTRIES.items():
         row = {"Industry": ind_name, "Stocks": len(tks), "_rs1w": None, "_rs1m": None, "_rs3m": None}
+        rs1w = industry_rs(json.dumps(tks[:8]), 5)
+        rs1m = industry_rs(json.dumps(tks[:8]), 21)
+        rs3m = industry_rs(json.dumps(tks[:8]), 63)
         if show_rs:
-            rs1w = industry_rs(json.dumps(tks[:8]), 5)
-            rs1m = industry_rs(json.dumps(tks[:8]), 21)
-            rs3m = industry_rs(json.dumps(tks[:8]), 63)
-            row["RS 1W vs SPX"] = color_rs(rs1w)
-            row["RS 1M vs SPX"] = color_rs(rs1m)
-            row["RS 3M vs SPX"] = color_rs(rs3m)
-            row["_rs1w"] = rs1w or -999
-            row["_rs1m"] = rs1m or -999
-            row["_rs3m"] = rs3m or -999
-        row["Top stocks"] = ", ".join(tks[:6]) + ("…" if len(tks) > 6 else "")
+            row["RS 1W"] = round(rs1w, 1) if rs1w else None
+            row["RS 1M"] = round(rs1m, 1) if rs1m else None
+            row["RS 3M"] = round(rs3m, 1) if rs3m else None
+        row["_rs1w"] = rs1w or -999
+        row["_rs1m"] = rs1m or -999
+        row["_rs3m"] = rs3m or -999
+        row["Top stocks"] = ", ".join(tks[:5]) + ("…" if len(tks) > 5 else "")
         rows.append(row)
 
     df_ind = pd.DataFrame(rows)
 
-    # Sort numerically using hidden columns
-    sort_map = {
-        "RS 3M vs SPX": "_rs3m",
-        "RS 1M vs SPX": "_rs1m",
-        "RS 1W vs SPX": "_rs1w",
-        "Industry":     "Industry",
-    }
+    # Apply filter
+    if rs_filter == "Positive RS 3M only":
+        df_ind = df_ind[df_ind["_rs3m"] > 0]
+    elif rs_filter == "RS 3M > 5%":
+        df_ind = df_ind[df_ind["_rs3m"] > 5]
+    elif rs_filter == "RS 3M > 10%":
+        df_ind = df_ind[df_ind["_rs3m"] > 10]
+    elif rs_filter == "Negative RS 3M":
+        df_ind = df_ind[df_ind["_rs3m"] < 0]
+
+    # Sort
+    sort_map = {"RS 3M vs SPX":"_rs3m","RS 1M vs SPX":"_rs1m","RS 1W vs SPX":"_rs1w","Industry":"Industry"}
     sort_key = sort_map.get(sort_by, "_rs3m")
     if sort_key in df_ind.columns:
         df_ind = df_ind.sort_values(sort_key, ascending=sort_asc).reset_index(drop=True)
 
-    # Replace string RS columns with numeric for proper Streamlit sorting
-    if show_rs and "_rs1w" in df_ind.columns:
-        df_ind["RS 1W vs SPX"] = df_ind["_rs1w"].apply(lambda v: round(v, 1) if v and v != -999 else None)
-        df_ind["RS 1M vs SPX"] = df_ind["_rs1m"].apply(lambda v: round(v, 1) if v and v != -999 else None)
-        df_ind["RS 3M vs SPX"] = df_ind["_rs3m"].apply(lambda v: round(v, 1) if v and v != -999 else None)
-
     display_cols = [c for c in df_ind.columns if not c.startswith("_")]
-    st.dataframe(
-        df_ind[display_cols],
+
+    # Style: color RS columns green/red
+    def style_rs(val):
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return ""
+        color = "#16a34a" if val > 0 else "#dc2626" if val < 0 else ""
+        return f"color: {color}; font-weight: 600"
+
+    df_show = df_ind[display_cols].copy()
+    styler = df_show.style
+    rs_cols = [c for c in ["RS 1W","RS 1M","RS 3M"] if c in df_show.columns]
+    if rs_cols:
+        styler = styler.applymap(style_rs, subset=rs_cols)
+        for rc in rs_cols:
+            styler = styler.format("{:+.1f}%", subset=[rc], na_rep="–")
+
+    # Interactive selection
+    sel = st.dataframe(
+        styler,
         width="stretch",
         hide_index=True,
-        height=600,
-        column_config={
-            "RS 1W vs SPX": st.column_config.NumberColumn("RS 1W vs SPX", format="%.1f%%"),
-            "RS 1M vs SPX": st.column_config.NumberColumn("RS 1M vs SPX", format="%.1f%%"),
-            "RS 3M vs SPX": st.column_config.NumberColumn("RS 3M vs SPX", format="%.1f%%"),
-        }
+        height=550,
+        on_select="rerun",
+        selection_mode="single-row",
     )
+
+    # ── Drill-down on row click ───────────────────────────────
+    selected_rows = sel.selection.rows if hasattr(sel, "selection") else []
+    if selected_rows:
+        sel_idx      = selected_rows[0]
+        sel_industry = df_ind.iloc[sel_idx]["Industry"]
+        sel_tks      = FINVIZ_INDUSTRIES.get(sel_industry, [])
+
+        st.markdown(f"---")
+        st.markdown(f"### 📊 {sel_industry}")
+        st.markdown(f"<p class='subtext'>{len(sel_tks)} stocks · 1Y weekly chart · 50w SMA (yellow) · 200w SMA (red)</p>",
+                    unsafe_allow_html=True)
+
+        with st.spinner(f"Loading {sel_industry} stocks…"):
+            ind_scan = scan_tickers(json.dumps(sel_tks), spx_close_json)
+
+        # Show stocks in a grid with mini charts
+        cols_per_row = 3
+        for i in range(0, len(sel_tks), cols_per_row):
+            batch = sel_tks[i:i+cols_per_row]
+            grid_cols = st.columns(cols_per_row)
+            for col, tk in zip(grid_cols, batch):
+                with col:
+                    # Get Weinstein data
+                    r = {}
+                    if not ind_scan.empty:
+                        match = ind_scan[ind_scan["ticker"] == tk]
+                        if not match.empty:
+                            r = match.iloc[0].to_dict()
+
+                    stage   = r.get("stage","–")
+                    score   = r.get("score", 0)
+                    rs_val  = r.get("rs")
+                    sig     = sig_icon(r) if r else ""
+
+                    if "Stage 2" in stage:   dot = "🟢"
+                    elif "Stage 3" in stage: dot = "🟡"
+                    elif "Stage 4" in stage: dot = "🔴"
+                    else:                    dot = "🔵"
+
+                    st.markdown(f"""
+                    <div style="padding:8px 4px 2px">
+                      <span style="font-weight:700;font-size:0.95rem">{dot} {tk}</span>
+                      <span style="color:{C['SUB']};font-size:0.75rem;margin-left:8px">{stage} · {score}/5</span>
+                      {"&nbsp;<strong style='color:" + C["GREEN"] + "'>" + sig + "</strong>" if sig else ""}
+                    </div>""", unsafe_allow_html=True)
+
+                    fig = make_mini_chart(tk, C)
+                    if fig:
+                        st.plotly_chart(fig, width="stretch", key=f"chart_{sel_industry}_{tk}")
+                    else:
+                        st.caption("No chart data")
+
+        # Export
+        st.markdown("---")
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            st.caption("All stocks")
+            st.download_button("⬇️ TradingView (.txt)", export_tv_lines(sel_tks),
+                               file_name=f"TV_{sel_industry.replace(' ','_')}.txt",
+                               mime="text/plain", key=f"dl_{sel_industry[:10]}")
+        if not ind_scan.empty:
+            sig_tks = ind_scan[ind_scan["early_sig"]|ind_scan["premium"]]["ticker"].tolist()
+            with ec2:
+                if sig_tks:
+                    st.caption("Signals only")
+                    st.download_button("⬇️ Signals (.txt)", export_tv_lines(sig_tks),
+                                       file_name=f"TV_{sel_industry.replace(' ','_')}_signals.txt",
+                                       mime="text/plain", key=f"dl_sig_{sel_industry[:10]}")
 
 # ════════════════════════════
 # TAB 2: Drill-down
