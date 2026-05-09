@@ -343,7 +343,14 @@ with tab_sectors:
             xaxis=dict(title="RS Score",showgrid=True,gridcolor=C["BORDER"],color=C["SUB"],zeroline=False),
             yaxis=dict(title="Momentum",showgrid=True,gridcolor=C["BORDER"],color=C["SUB"],zeroline=False),
             showlegend=False)
-        st.plotly_chart(fig_rrg, width="stretch")
+        rrg_event = st.plotly_chart(fig_rrg, width="stretch",
+                                       on_select="rerun", key="rrg_sector_chart")
+        # Handle click → auto-select sector in drill-down
+        if rrg_event and hasattr(rrg_event, "selection") and rrg_event.selection.get("points"):
+            clicked = rrg_event.selection["points"][0].get("text","")
+            if clicked and clicked in list(SECTORS.values()):
+                st.session_state["sec_drill"] = clicked
+                st.toast(f"📍 {clicked} selected — see drill-down below", icon="🏦")
 
     st.markdown("---")
     st.markdown("#### Sector Ranking")
@@ -404,6 +411,59 @@ with tab_industries:
     st.markdown("---")
     st.markdown(f"<p class='subtext'>{len(FINVIZ_INDUSTRIES)} industries · {sum(len(v) for v in FINVIZ_INDUSTRIES.values())} stocks</p>",unsafe_allow_html=True)
 
+    # ── Industry RRG ──────────────────────────────────────────
+    with st.expander("📡 Industry Relative Rotation Graph", expanded=False):
+        st.markdown(f"<p class='subtext'>Based on RS 3M (X) and RS 1W vs 3M momentum (Y). Click a dot to drill into that industry.</p>",
+                    unsafe_allow_html=True)
+        with st.spinner("Building industry RRG…"):
+            ind_rrg_rows = []
+            for ind_name, tks in list(FINVIZ_INDUSTRIES.items()):
+                rs3m = industry_rs(json.dumps(tks[:8]), 63)
+                rs1w = industry_rs(json.dumps(tks[:8]), 5)
+                if rs3m is None: continue
+                momentum = (rs1w or 0) - (rs3m / 12)  # 1W RS vs monthly average
+                ind_rrg_rows.append({"name": ind_name, "x": rs3m, "y": momentum})
+
+        if ind_rrg_rows:
+            ix=[r["x"] for r in ind_rrg_rows]
+            iy=[r["y"] for r in ind_rrg_rows]
+            il=[r["name"] for r in ind_rrg_rows]
+            ic=[("rgba(74,222,128,0.9)" if r["x"]>0 and r["y"]>0 else
+                 "rgba(251,191,36,0.9)" if r["x"]>0 else
+                 "rgba(96,165,250,0.9)"  if r["y"]>0 else
+                 "rgba(248,113,113,0.9)") for r in ind_rrg_rows]
+
+            mx2=max(abs(v) for v in ix+[1])*1.2; my2=max(abs(v) for v in iy+[1])*1.2
+            fig_ind_rrg=go.Figure()
+            for xr,yr,col in [(mx2,my2,"rgba(74,222,128,0.05)"),(mx2,-my2,"rgba(251,191,36,0.05)"),
+                              (-mx2,-my2,"rgba(248,113,113,0.05)"),(-mx2,my2,"rgba(96,165,250,0.05)")]:
+                fig_ind_rrg.add_shape(type="rect",x0=0 if xr>0 else xr,y0=0 if yr>0 else yr,
+                    x1=xr if xr>0 else 0,y1=yr if yr>0 else 0,fillcolor=col,line_width=0)
+            fig_ind_rrg.add_hline(y=0,line_color=C["BORDER"],line_width=1)
+            fig_ind_rrg.add_vline(x=0,line_color=C["BORDER"],line_width=1)
+            for lb,xp,yp in [("LEADING",0.75,0.85),("WEAKENING",0.75,-0.85),("IMPROVING",-0.75,0.85),("LAGGING",-0.75,-0.85)]:
+                fig_ind_rrg.add_annotation(x=mx2*xp,y=my2*yp,text=lb,showarrow=False,
+                    font=dict(size=8,color=C["BORDER"]),opacity=0.5)
+            fig_ind_rrg.add_trace(go.Scatter(x=ix,y=iy,mode="markers+text",
+                text=il,textposition="top center",textfont=dict(size=8,color=C["TEXT"]),
+                marker=dict(color=ic,size=10,line=dict(width=1,color=C["BORDER"])),
+                hovertemplate="<b>%{text}</b><br>RS 3M: %{x:.1f}%<br>Momentum: %{y:.1f}<extra></extra>"))
+            fig_ind_rrg.update_layout(height=450,margin=dict(l=0,r=0,t=10,b=0),
+                paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color=C["TEXT"],family="Inter"),
+                xaxis=dict(title="RS 3M vs SPX (%)",showgrid=True,gridcolor=C["BORDER"],color=C["SUB"],zeroline=False),
+                yaxis=dict(title="Momentum",showgrid=True,gridcolor=C["BORDER"],color=C["SUB"],zeroline=False),
+                showlegend=False)
+
+            ind_rrg_event = st.plotly_chart(fig_ind_rrg, width="stretch",
+                                             on_select="rerun", key="rrg_ind_chart")
+            if ind_rrg_event and hasattr(ind_rrg_event,"selection") and ind_rrg_event.selection.get("points"):
+                clicked_ind = ind_rrg_event.selection["points"][0].get("text","")
+                if clicked_ind in FINVIZ_INDUSTRIES:
+                    st.session_state["ind_drill2"] = clicked_ind
+                    st.toast(f"📍 {clicked_ind} selected — see drill-down below", icon="🔍")
+
+    st.markdown("---")
     ic1,ic2,ic3=st.columns([2,2,2])
     with ic1: ind_sort=st.selectbox("Sort by",["RS 3M","RS 1M","RS 1W","Industry"],key="ind_sort2")
     with ic2: ind_filter=st.selectbox("Filter",["All","Positive RS 3M","RS 3M > 5%","RS 3M > 10%","Negative RS 3M"],key="ind_filter2")
