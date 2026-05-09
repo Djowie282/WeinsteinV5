@@ -324,9 +324,10 @@ with tab_sectors:
     if rrg_x:
         mx=max(abs(v) for v in rrg_x+[1])*1.3; my=max(abs(v) for v in rrg_y+[1])*1.3
         fig_rrg=go.Figure()
-        for xr,yr,col in [(mx,my,C["GREEN"]),(mx,-my,C["YELLOW"]),(-mx,-my,C["RED"]),(-mx,my,C["BLUE"])]:
+        for xr,yr,col in [(mx,my,"rgba(74,222,128,0.07)"),(mx,-my,"rgba(251,191,36,0.07)"),
+                          (-mx,-my,"rgba(248,113,113,0.07)"),(-mx,my,"rgba(96,165,250,0.07)")]:
             fig_rrg.add_shape(type="rect",x0=0 if xr>0 else xr,y0=0 if yr>0 else yr,
-                x1=xr if xr>0 else 0,y1=yr if yr>0 else 0,fillcolor=f"{col}10",line_width=0)
+                x1=xr if xr>0 else 0,y1=yr if yr>0 else 0,fillcolor=col,line_width=0)
         for lb,xp,yp in [("LEADING",0.8,0.9),("WEAKENING",0.8,-0.9),("IMPROVING",-0.8,0.9),("LAGGING",-0.8,-0.9)]:
             fig_rrg.add_annotation(x=mx*xp,y=my*yp,text=lb,showarrow=False,
                 font=dict(size=9,color=C["BORDER"]),opacity=0.6)
