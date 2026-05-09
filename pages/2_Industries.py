@@ -266,7 +266,7 @@ with ind_tab1:
     styler = df_show.style
     rs_cols = [c for c in ["RS 1W","RS 1M","RS 3M"] if c in df_show.columns]
     if rs_cols:
-        styler = styler.applymap(style_rs, subset=rs_cols)
+        styler = styler.map(style_rs, subset=rs_cols)
         for rc in rs_cols:
             styler = styler.format("{:+.1f}%", subset=[rc], na_rep="–")
 
