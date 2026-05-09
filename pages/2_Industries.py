@@ -18,6 +18,82 @@ page_config("Industries · Weinstein V5")
 inject_css()
 C = get_colors()
 
+@st.cache_data(ttl=7*24*3600, show_spinner=False)
+def get_yf_industry(ticker: str) -> str:
+    """Get yfinance industry string for a ticker. Cached 7 days."""
+    try:
+        info = yf.Ticker(ticker).info
+        return info.get("industry", "") or ""
+    except Exception:
+        return ""
+
+@st.cache_data(ttl=7*24*3600, show_spinner=False)
+def scan_industry_expanded(industry_name: str, curated_json: str,
+                            spx_close_json: str) -> pd.DataFrame:
+    """
+    Scan full NYSE+NASDAQ universe for stocks matching this industry.
+    Maps via yfinance industry field. Cached 7 days.
+    """
+    from utils.screener import fetch_nyse_tickers, scan_batch
+    curated = json.loads(curated_json)
+    all_tks = fetch_nyse_tickers()
+    # Remove already-curated stocks
+    extra_tks = [t for t in all_tks if t not in curated]
+
+    # Keyword mapping: FINVIZ industry → yfinance industry keywords
+    kw_map = {
+        "Semiconductors":              ["semiconductor"],
+        "Semiconductor Equipment":     ["semiconductor equipment"],
+        "Software - Application":      ["software—application","software-application","application software"],
+        "Software - Infrastructure":   ["software—infrastructure","infrastructure software","systems software"],
+        "Computer Hardware":           ["computer hardware","electronic computers"],
+        "Biotechnology":               ["biotechnology"],
+        "Drug Manufacturers - Major":  ["drug manufacturers—general","drug manufacturers-general","pharmaceuticals"],
+        "Drug Manufacturers - Specialty":["drug manufacturers—specialty","specialty pharmaceutical"],
+        "Medical Devices":             ["medical devices","medical instruments"],
+        "Banks - Major":               ["banks—diversified","money center banks"],
+        "Banks - Regional":            ["banks—regional","regional banks"],
+        "Oil & Gas E&P":               ["oil & gas e&p","oil & gas exploration"],
+        "Oil & Gas Midstream":         ["oil & gas midstream"],
+        "Oil & Gas Refining & Marketing":["oil & gas refining"],
+        "Aerospace & Defense":         ["aerospace & defense","aerospace defense"],
+        "Auto Manufacturers":          ["auto manufacturers"],
+        "Internet Retail":             ["internet retail"],
+        "Solar":                       ["solar"],
+        "Gold":                        ["gold"],
+        "Steel":                       ["steel"],
+        "Insurance":                   ["insurance"],
+        "Asset Management":            ["asset management","capital markets"],
+        "Restaurants":                 ["restaurants"],
+        "Specialty Retail":            ["specialty retail"],
+    }
+
+    keywords = []
+    ind_lower = industry_name.lower()
+    for k, kws in kw_map.items():
+        if k.lower() == ind_lower:
+            keywords = kws
+            break
+    if not keywords:
+        # Fallback: use first two words of industry name
+        words = ind_lower.replace(" - "," ").split()
+        keywords = [" ".join(words[:2])] if len(words) >= 2 else words
+
+    # Filter tickers by yfinance industry match (batch, cached)
+    matched = []
+    for tk in extra_tks[:2000]:  # limit to top 2000 for speed
+        yf_ind = get_yf_industry(tk).lower()
+        if any(kw in yf_ind for kw in keywords):
+            matched.append(tk)
+
+    if not matched:
+        return pd.DataFrame()
+
+    results = scan_batch(json.dumps(matched), spx_close_json, min_score=0, min_price=1.0)
+    if not results:
+        return pd.DataFrame()
+    return pd.DataFrame(results)
+
 # ── Universe ─────────────────────────────────────────────────
 FINVIZ_INDUSTRIES = {
     "Semiconductors":                ["NVDA","AMD","AVGO","QCOM","TXN","MCHP","ADI","AMAT","LRCX","KLAC","ASML","ARM","MU","SMCI","ON","MRVL","INTC","NXPI"],
@@ -301,46 +377,102 @@ with ind_tab1:
     if selected_rows:
         sel_idx      = selected_rows[0]
         sel_industry = df_ind.iloc[sel_idx]["Industry"]
-        sel_tks      = FINVIZ_INDUSTRIES.get(sel_industry, [])
+        curated_tks  = FINVIZ_INDUSTRIES.get(sel_industry, [])
 
-        st.markdown(f"---")
-        st.markdown(f"### 📊 {sel_industry}")
-        st.markdown(f"<p class='subtext'>{len(sel_tks)} stocks · 1Y weekly chart · 50w SMA (yellow) · 200w SMA (red)</p>",
+        st.markdown("---")
+
+        # Header + expand toggle
+        hdr1, hdr2 = st.columns([4,1])
+        with hdr1:
+            st.markdown(f"### 📊 {sel_industry}")
+        with hdr2:
+            expand_nyse = st.toggle("+ NYSE/NASDAQ", value=False,
+                                     key=f"expand_{sel_industry[:15]}",
+                                     help="Scan full NYSE+NASDAQ for additional stocks in this industry. First run ~5 min, cached 7 days.")
+
+        # Combine curated + NYSE expanded
+        if expand_nyse:
+            st.info(f"📡 Scanning NYSE+NASDAQ for {sel_industry} stocks via yfinance industry tags… First run takes a few minutes, cached 7 days.")
+            with st.spinner("Expanding universe…"):
+                nyse_extra_df = scan_industry_expanded(
+                    sel_industry, json.dumps(curated_tks), spx_close_json)
+            extra_tks = nyse_extra_df["ticker"].tolist() if not nyse_extra_df.empty else []
+            all_tks   = list(dict.fromkeys(curated_tks + extra_tks))  # dedup, preserve order
+        else:
+            all_tks       = curated_tks
+            nyse_extra_df = pd.DataFrame()
+
+        st.markdown(f"<p class='subtext'>{len(curated_tks)} curated stocks"
+                    + (f" + {len(all_tks)-len(curated_tks)} NYSE/NASDAQ" if expand_nyse else "")
+                    + " · 1Y weekly · 50w SMA (yellow) · 200w SMA (red)</p>",
                     unsafe_allow_html=True)
 
-        with st.spinner(f"Loading {sel_industry} stocks…"):
-            ind_scan = scan_tickers(json.dumps(sel_tks), spx_close_json)
+        with st.spinner(f"Scanning {sel_industry}…"):
+            ind_scan = scan_tickers(json.dumps(curated_tks), spx_close_json)
+            if expand_nyse and not nyse_extra_df.empty:
+                ind_scan = pd.concat([ind_scan, nyse_extra_df], ignore_index=True).drop_duplicates("ticker")
 
-        # Show stocks in a grid with mini charts
+        # Signal summary
+        if not ind_scan.empty:
+            n_p = len(ind_scan[ind_scan["premium"]])
+            n_e = len(ind_scan[ind_scan["early_sig"]])
+            n_s = len(ind_scan[ind_scan["score"]>=4])
+            sm1,sm2,sm3,sm4 = st.columns(4)
+            sm1.metric("Stocks", len(all_tks))
+            sm2.metric("🟢 Premium", n_p)
+            sm3.metric("🟡 Early", n_e)
+            sm4.metric("🔵 Stage 2+", n_s)
+
+        # Signal table first (compact)
+        if not ind_scan.empty:
+            sig_only = ind_scan[ind_scan["score"]>=3].sort_values(
+                ["premium","early_sig","score","rs"],
+                ascending=[False,False,False,False]
+            )
+            if not sig_only.empty:
+                st.markdown("#### Signals & Stage 2")
+                tbl_rows = []
+                for _, r in sig_only.iterrows():
+                    cross = f"{int(r['cross'])}w" if r.get("cross",-1)>=0 else "–"
+                    tbl_rows.append({
+                        "Signal": sig_icon(r.to_dict()),
+                        "Ticker": r["ticker"],
+                        "Stage":  r["stage"],
+                        "Score":  f"{r['score']}/5",
+                        "RS":     fmt(r["rs"],"",1),
+                        "Price":  fmt(r["price"]),
+                        "%>SMA":  fmt(r["pct_above"],"%",1),
+                        "Vol":    fmt(r["vol"],"x",1),
+                        "Base":   f"{r['base_w']}w",
+                        "Cross":  cross,
+                        "Stop":   fmt(r["stop"]),
+                    })
+                st.dataframe(pd.DataFrame(tbl_rows), width="stretch", hide_index=True)
+
+        # Charts grid
+        st.markdown("#### Charts — 1Y Weekly")
+        st.markdown(f"<p class='subtext'>50w SMA (yellow) · 200w SMA (red)</p>", unsafe_allow_html=True)
         cols_per_row = 3
-        for i in range(0, len(sel_tks), cols_per_row):
-            batch = sel_tks[i:i+cols_per_row]
+        for i in range(0, len(all_tks), cols_per_row):
+            batch     = all_tks[i:i+cols_per_row]
             grid_cols = st.columns(cols_per_row)
             for col, tk in zip(grid_cols, batch):
                 with col:
-                    # Get Weinstein data
                     r = {}
                     if not ind_scan.empty:
-                        match = ind_scan[ind_scan["ticker"] == tk]
-                        if not match.empty:
-                            r = match.iloc[0].to_dict()
+                        m = ind_scan[ind_scan["ticker"]==tk]
+                        if not m.empty: r = m.iloc[0].to_dict()
 
-                    stage   = r.get("stage","–")
-                    score   = r.get("score", 0)
-                    rs_val  = r.get("rs")
-                    sig     = sig_icon(r) if r else ""
+                    stage = r.get("stage","–")
+                    score = r.get("score",0)
+                    sig   = sig_icon(r) if r else ""
+                    dot   = "🟢" if "Stage 2" in stage else "🟡" if "Stage 3" in stage else "🔴" if "Stage 4" in stage else "🔵"
+                    sig_html = f"&nbsp;<strong style='color:{C['GREEN']}'>{sig}</strong>" if sig else ""
 
-                    if "Stage 2" in stage:   dot = "🟢"
-                    elif "Stage 3" in stage: dot = "🟡"
-                    elif "Stage 4" in stage: dot = "🔴"
-                    else:                    dot = "🔵"
-
-                    st.markdown(f"""
-                    <div style="padding:8px 4px 2px">
+                    st.markdown(f"""<div style="padding:8px 4px 2px">
                       <span style="font-weight:700;font-size:0.95rem">{dot} {tk}</span>
                       <span style="color:{C['SUB']};font-size:0.75rem;margin-left:8px">{stage} · {score}/5</span>
-                      {"&nbsp;<strong style='color:" + C["GREEN"] + "'>" + sig + "</strong>" if sig else ""}
-                    </div>""", unsafe_allow_html=True)
+                      {sig_html}</div>""", unsafe_allow_html=True)
 
                     fig = make_mini_chart(tk, C)
                     if fig:
@@ -350,20 +482,25 @@ with ind_tab1:
 
         # Export
         st.markdown("---")
-        ec1, ec2 = st.columns(2)
+        ec1, ec2, ec3 = st.columns(3)
         with ec1:
             st.caption("All stocks")
-            st.download_button("⬇️ TradingView (.txt)", export_tv_lines(sel_tks),
-                               file_name=f"TV_{sel_industry.replace(' ','_')}.txt",
-                               mime="text/plain", key=f"dl_{sel_industry[:10]}")
+            st.download_button("⬇️ All (.txt)", export_tv_lines(all_tks),
+                               file_name=f"TV_{sel_industry.replace(' ','_')}_all.txt",
+                               mime="text/plain", key=f"dl_{sel_industry[:12]}")
         if not ind_scan.empty:
             sig_tks = ind_scan[ind_scan["early_sig"]|ind_scan["premium"]]["ticker"].tolist()
+            s2_tks  = ind_scan[ind_scan["score"]>=4]["ticker"].tolist()
             with ec2:
                 if sig_tks:
-                    st.caption("Signals only")
                     st.download_button("⬇️ Signals (.txt)", export_tv_lines(sig_tks),
                                        file_name=f"TV_{sel_industry.replace(' ','_')}_signals.txt",
-                                       mime="text/plain", key=f"dl_sig_{sel_industry[:10]}")
+                                       mime="text/plain", key=f"dl_sig_{sel_industry[:12]}")
+            with ec3:
+                if s2_tks:
+                    st.download_button("⬇️ Stage 2+ (.txt)", export_tv_lines(s2_tks),
+                                       file_name=f"TV_{sel_industry.replace(' ','_')}_s2.txt",
+                                       mime="text/plain", key=f"dl_s2_{sel_industry[:12]}")
 
 # ════════════════════════════
 # TAB 2: Drill-down
