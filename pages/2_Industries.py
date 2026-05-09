@@ -213,7 +213,8 @@ with ind_tab1:
     with c2:
         rs_filter = st.selectbox("Filter", ["All industries","Positive RS 3M only","RS 3M > 5%","RS 3M > 10%","Negative RS 3M"], key="ind_filter")
     with c3:
-        sort_asc = st.toggle("Ascending", value=False, key="ind_asc")
+        sort_asc = st.toggle("↑ Low → High" if st.session_state.get("ind_asc") else "↓ High → Low",
+                              value=False, key="ind_asc")
     with c4:
         show_rs  = st.toggle("RS columns", value=True, key="show_rs")
 
@@ -269,15 +270,31 @@ with ind_tab1:
         for rc in rs_cols:
             styler = styler.format("{:+.1f}%", subset=[rc], na_rep="–")
 
-    # Interactive selection
-    sel = st.dataframe(
+    # Show styled table (visual only — no selection support with Styler)
+    st.dataframe(
         styler,
         width="stretch",
         hide_index=True,
         height=550,
-        on_select="rerun",
-        selection_mode="single-row",
     )
+
+    # Separate selector for drill-down
+    st.markdown(f"<p class='subtext'>Select an industry to see all stocks and charts:</p>", unsafe_allow_html=True)
+    sel_industry_pick = st.selectbox(
+        "Industry drill-down",
+        ["– select –"] + df_ind["Industry"].tolist(),
+        key="ind_drilldown",
+        label_visibility="collapsed",
+    )
+
+    class _Sel:
+        pass
+    sel = _Sel()
+    sel.selection = type("S", (), {"rows": []})()
+    if sel_industry_pick and sel_industry_pick != "– select –":
+        idx = df_ind[df_ind["Industry"] == sel_industry_pick].index
+        if len(idx) > 0:
+            sel.selection.rows = [int(idx[0])]
 
     # ── Drill-down on row click ───────────────────────────────
     selected_rows = sel.selection.rows if hasattr(sel, "selection") else []
