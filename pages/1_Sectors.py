@@ -464,31 +464,32 @@ with tab_industries:
                     st.toast(f"📍 {clicked_ind} selected — see drill-down below", icon="🔍")
 
     st.markdown("---")
-    ic1,ic2,ic3=st.columns([2,2,2])
-    with ic1: ind_sort=st.selectbox("Sort by",["RS 3M","RS 1M","RS 1W","Industry"],key="ind_sort2")
-    with ic2: ind_filter=st.selectbox("Filter",["All","Positive RS 3M","RS 3M > 5%","RS 3M > 10%","Negative RS 3M"],key="ind_filter2")
-    with ic3: ind_asc=st.toggle("↑ Low→High" if st.session_state.get("ind_asc2") else "↓ High→Low",value=False,key="ind_asc2")
+    with st.expander("📋 Industry RS Table", expanded=True):
+        ic1,ic2,ic3=st.columns([2,2,2])
+        with ic1: ind_sort=st.selectbox("Sort by",["RS 3M","RS 1M","RS 1W","Industry"],key="ind_sort2")
+        with ic2: ind_filter=st.selectbox("Filter",["All","Positive RS 3M","RS 3M > 5%","RS 3M > 10%","Negative RS 3M"],key="ind_filter2")
+        with ic3: ind_asc=st.toggle("↑ Low→High" if st.session_state.get("ind_asc2") else "↓ High→Low",value=False,key="ind_asc2")
 
-    with st.spinner("Loading RS data…"):
-        df_ind=build_industry_table()
+        with st.spinner("Loading RS data…"):
+            df_ind=build_industry_table()
 
-    if ind_filter=="Positive RS 3M": df_ind=df_ind[df_ind["_rs3m"]>0]
-    elif ind_filter=="RS 3M > 5%":   df_ind=df_ind[df_ind["_rs3m"]>5]
-    elif ind_filter=="RS 3M > 10%":  df_ind=df_ind[df_ind["_rs3m"]>10]
-    elif ind_filter=="Negative RS 3M":df_ind=df_ind[df_ind["_rs3m"]<0]
+        if ind_filter=="Positive RS 3M": df_ind=df_ind[df_ind["_rs3m"]>0]
+        elif ind_filter=="RS 3M > 5%":   df_ind=df_ind[df_ind["_rs3m"]>5]
+        elif ind_filter=="RS 3M > 10%":  df_ind=df_ind[df_ind["_rs3m"]>10]
+        elif ind_filter=="Negative RS 3M":df_ind=df_ind[df_ind["_rs3m"]<0]
 
-    sk={"RS 3M":"_rs3m","RS 1M":"_rs1m","RS 1W":"_rs1w","Industry":"Industry"}.get(ind_sort,"_rs3m")
-    df_ind=df_ind.sort_values(sk,ascending=ind_asc).reset_index(drop=True)
+        sk={"RS 3M":"_rs3m","RS 1M":"_rs1m","RS 1W":"_rs1w","Industry":"Industry"}.get(ind_sort,"_rs3m")
+        df_ind=df_ind.sort_values(sk,ascending=ind_asc).reset_index(drop=True)
 
-    def style_num(v):
-        if not isinstance(v,(int,float)) or np.isnan(v): return ""
-        return f"color:{'#16a34a' if v>0 else '#dc2626'};font-weight:600"
+        def style_num(v):
+            if not isinstance(v,(int,float)) or np.isnan(v): return ""
+            return f"color:{'#16a34a' if v>0 else '#dc2626'};font-weight:600"
 
-    styled_ind=df_ind[["Industry","Stocks","RS 1W","RS 1M","RS 3M"]].style.map(
-        style_num,subset=["RS 1W","RS 1M","RS 3M"]).format(
-        {c:lambda v:f"{v:+.1f}%" if isinstance(v,(int,float)) and not np.isnan(v) else "–"
-         for c in ["RS 1W","RS 1M","RS 3M"]})
-    st.dataframe(styled_ind, width="stretch", hide_index=True, height=520)
+        styled_ind=df_ind[["Industry","Stocks","RS 1W","RS 1M","RS 3M"]].style.map(
+            style_num,subset=["RS 1W","RS 1M","RS 3M"]).format(
+            {c:lambda v:f"{v:+.1f}%" if isinstance(v,(int,float)) and not np.isnan(v) else "–"
+             for c in ["RS 1W","RS 1M","RS 3M"]})
+        st.dataframe(styled_ind, width="stretch", hide_index=True, height=520)
 
     st.markdown("---")
     st.markdown("#### Drill-down")
