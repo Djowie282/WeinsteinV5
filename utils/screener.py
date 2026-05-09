@@ -126,8 +126,26 @@ def _slope(s: pd.Series, lb: int) -> float:
     return slope / v.iloc[-1]
 
 def _rs_line(a: pd.Series, b: pd.Series) -> pd.Series:
-    c = pd.concat([a, b], axis=1).dropna()
-    return c.iloc[:, 0] / c.iloc[:, 1]
+    try:
+        a = a.copy(); b = b.copy()
+        # Strip timezone and normalize to date — fixes pandas 3.0 index comparison error
+        def clean_index(s):
+            idx = pd.to_datetime(s.index)
+            try:
+                idx = idx.tz_localize(None)
+            except Exception:
+                try:
+                    idx = idx.tz_convert(None)
+                except Exception:
+                    pass
+            s.index = idx.normalize()
+            return s
+        a = clean_index(a); b = clean_index(b)
+        c = pd.concat([a, b], axis=1).dropna()
+        if c.empty or c.shape[1] < 2: return pd.Series(dtype=float)
+        return c.iloc[:, 0] / c.iloc[:, 1]
+    except Exception:
+        return pd.Series(dtype=float)
 
 def _rs_score(rs: pd.Series, w: int = RS_MA_WEEKS) -> float:
     if len(rs) < w + 5: return np.nan
