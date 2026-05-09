@@ -31,7 +31,10 @@ with st.spinner("Loading market data…"):
     spx_ev, sec_df, spx_close_json = get_spx_data()
 
 if spx_ev is None:
-    st.error("Could not load market data.")
+    st.error("Yahoo Finance is rate-limiting this server. Please wait 30 seconds and refresh the page.")
+    if st.button("🔄 Retry now"):
+        st.cache_data.clear()
+        st.rerun()
     st.stop()
 
 st.markdown("# 📋 All Stocks")
@@ -39,16 +42,17 @@ st.markdown(f"<p class='subtext'>Cross-sector view of all stocks. Filter by sign
 
 # ── Controls ──────────────────────────────────────────────────
 st.markdown("---")
-f1, f2, f3, f4 = st.columns([2,2,2,2])
-with f1:
-    sig_filter = st.selectbox("Signal", ["All","🟢+🟡 Best","🟢 Premium","🟡 Early","🔵 Stage 2+"])
-with f2:
-    sec_filter = st.selectbox("Sector", ["All"] + list(SECTORS.values()))
-with f3:
-    min_score  = st.selectbox("Min score", [0,1,2,3,4,5], index=2)
-with f4:
-    nyse_mode  = st.toggle("Full NYSE+NASDAQ", value=False, key="all_nyse",
-                            help="Scans ~6000 US stocks. Cached 6h after first run.")
+f1,f2,f3,f4 = st.columns([2,2,2,2])
+with f1: sig_filter = st.selectbox("Signal",["All","🟢+🟡 Best","🟢 Premium","🟡 Early","🔵 Stage 2+"])
+with f2: sec_filter = st.selectbox("Sector",["All"]+list(SECTORS.values()))
+with f3: min_score  = st.selectbox("Min score",[0,1,2,3,4,5],index=2)
+with f4: nyse_mode  = st.toggle("Full NYSE+NASDAQ",value=False,key="all_nyse",help="Scans ~6000 US stocks. Cached 7 days.")
+
+f5,f6,f7,_ = st.columns([2,2,2,2])
+with f5: min_vol = st.number_input("Min volume ratio (x avg)", min_value=0.0, max_value=10.0, value=0.0, step=0.5, help="0 = no filter. E.g. 1.5 = only stocks with 1.5x above-average volume")
+with f6: mcap_min = st.number_input("Min market cap ($B)", min_value=0.0, value=0.0, step=1.0, help="0 = no minimum")
+with f7: mcap_max = st.number_input("Max market cap ($B)", min_value=0.0, value=0.0, step=10.0, help="0 = no maximum")
+mcap_active = mcap_min > 0 or mcap_max > 0
 
 # Market cap filter
 mc1, mc2, mc3 = st.columns([2,2,2])
@@ -128,6 +132,8 @@ if not nyse_mode:
 
         # Apply filters
         df_all = df_all[df_all["score"] >= min_score]
+        if min_vol > 0:
+            df_all = df_all[df_all["vol"].notna() & (df_all["vol"] >= min_vol)]
         if sig_filter == "🟢+🟡 Best":   df_all = df_all[df_all["premium"]|df_all["early_sig"]]
         elif sig_filter == "🟢 Premium": df_all = df_all[df_all["premium"]]
         elif sig_filter == "🟡 Early":   df_all = df_all[df_all["early_sig"]]
@@ -175,7 +181,7 @@ if not nyse_mode:
                 "Risk":      fmt(r["risk"],"%",1),
             })
 
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=700)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=700)
 
         # Export
         st.markdown("---")
@@ -255,7 +261,7 @@ else:
                 "Stop":     fmt(r["stop"]),
                 "Risk":     fmt(r["risk"],"%",1),
             })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=700)
+        st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=700)
 
         all_tks  = df_nyse["ticker"].tolist()
         best_tks = df_nyse[df_nyse["premium"]|df_nyse["early_sig"]]["ticker"].tolist()
