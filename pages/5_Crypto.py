@@ -8,6 +8,7 @@ pages/5_Crypto.py — Crypto Stage Screener
 """
 
 import streamlit as st
+import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -462,6 +463,117 @@ if n_p > 0 or n_e > 0:
 
 st.markdown("---")
 
+# ── Crypto RRG ────────────────────────────────────────────────
+with st.expander("📡 Crypto Relative Rotation Graph — vs BTC", expanded=False):
+    st.markdown(f"<p class='subtext'>X = RS 3M vs BTC · Y = Momentum (1W vs 3M trend) · Top 50 coins by market cap · Click to highlight</p>",
+                unsafe_allow_html=True)
+
+    rrg_coins = sorted(results, key=lambda x: x.get("mcap",0), reverse=True)[:50]
+    rrg_coins = [r for r in rrg_coins if r.get("rs") is not None]
+
+    if rrg_coins:
+        @st.cache_data(ttl=7*24*3600, show_spinner=False)
+        def get_coin_rs_data(tickers_json, btc_json):
+            from io import StringIO as _SIO
+            import json as _json
+            tickers = _json.loads(tickers_json)
+            btc = pd.read_json(_SIO(btc_json), typ="series")
+            # Clean BTC index
+            btc.index = pd.to_datetime(btc.index)
+            try: btc.index = btc.index.tz_localize(None)
+            except: 
+                try: btc.index = btc.index.tz_convert(None)
+                except: pass
+            btc.index = btc.index.normalize()
+            result = {}
+            for tk in tickers:
+                try:
+                    df = yf.download(tk, period="4mo", interval="1d",
+                                     auto_adjust=True, progress=False, threads=False)
+                    if df.empty or len(df) < 10: continue
+                    if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
+                    close = df["Close"].copy()
+                    close.index = pd.to_datetime(close.index)
+                    try: close.index = close.index.tz_localize(None)
+                    except:
+                        try: close.index = close.index.tz_convert(None)
+                        except: pass
+                    close.index = close.index.normalize()
+                    btc_a = btc.reindex(close.index, method="ffill").dropna()
+                    close_a = close.reindex(btc_a.index).dropna()
+                    if len(close_a) < 10: continue
+                    n3 = min(63, len(close_a)-1); n1 = min(5, len(close_a)-1)
+                    rs3m = ((close_a.iloc[-1]/close_a.iloc[-n3-1]) / (btc_a.iloc[-1]/btc_a.iloc[-n3-1]) - 1)*100
+                    rs1w = ((close_a.iloc[-1]/close_a.iloc[-n1-1]) / (btc_a.iloc[-1]/btc_a.iloc[-n1-1]) - 1)*100
+                    result[tk] = {"rs3m": round(float(rs3m),2), "rs1w": round(float(rs1w),2)}
+                except: continue
+            return result
+
+        yf_tks = [coin_to_yf(r["symbol"]) for r in rrg_coins]
+        with st.spinner("Computing RS momentum for top 50 coins…"):
+            rs_data = get_coin_rs_data(json.dumps(yf_tks), btc_close.to_json())
+
+        rrg_x,rrg_y,rrg_labels,rrg_colors = [],[],[],[]
+        for r in rrg_coins:
+            tk = coin_to_yf(r["symbol"])
+            if tk not in rs_data: continue
+            x = rs_data[tk]["rs3m"]
+            y = rs_data[tk]["rs1w"] - (x/12)
+            rrg_x.append(x); rrg_y.append(y)
+            rrg_labels.append(r["symbol"].upper())
+            rrg_colors.append(
+                "rgba(74,222,128,0.9)"  if x>0 and y>0 else
+                "rgba(251,191,36,0.9)"  if x>0 else
+                "rgba(96,165,250,0.9)"  if y>0 else
+                "rgba(248,113,113,0.9)")
+
+        if rrg_x:
+            mx=max(abs(v) for v in rrg_x+[1])*1.2; my=max(abs(v) for v in rrg_y+[1])*1.2
+            fig_cr=go.Figure()
+            for xr,yr,col in [(mx,my,"rgba(74,222,128,0.05)"),(mx,-my,"rgba(251,191,36,0.05)"),
+                              (-mx,-my,"rgba(248,113,113,0.05)"),(-mx,my,"rgba(96,165,250,0.05)")]:
+                fig_cr.add_shape(type="rect",x0=0 if xr>0 else xr,y0=0 if yr>0 else yr,
+                    x1=xr if xr>0 else 0,y1=yr if yr>0 else 0,fillcolor=col,line_width=0)
+            fig_cr.add_hline(y=0,line_color="#2d3149",line_width=1)
+            fig_cr.add_vline(x=0,line_color="#2d3149",line_width=1)
+            for lb,xp,yp in [("LEADING",0.75,0.85),("WEAKENING",0.75,-0.85),
+                              ("IMPROVING",-0.75,0.85),("LAGGING",-0.75,-0.85)]:
+                fig_cr.add_annotation(x=mx*xp,y=my*yp,text=lb,showarrow=False,
+                    font=dict(size=9,color="#2d3149"),opacity=0.5)
+            fig_cr.add_trace(go.Scatter(x=rrg_x,y=rrg_y,mode="markers+text",
+                text=rrg_labels,textposition="top center",textfont=dict(size=9),
+                marker=dict(color=rrg_colors,size=12,line=dict(width=1,color="#2d3149")),
+                hovertemplate="<b>%{text}</b><br>RS 3M vs BTC: %{x:.1f}%<br>Momentum: %{y:.1f}<extra></extra>"))
+            fig_cr.update_layout(height=500,margin=dict(l=0,r=0,t=10,b=0),
+                paper_bgcolor="rgba(0,0,0,0)",plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(family="Inter"),
+                xaxis=dict(title="RS 3M vs BTC (%)",showgrid=True,gridcolor="#2d3149",zeroline=False),
+                yaxis=dict(title="Momentum",showgrid=True,gridcolor="#2d3149",zeroline=False),
+                showlegend=False)
+
+            cr_event = st.plotly_chart(fig_cr, width="stretch",
+                                        on_select="rerun", key="rrg_crypto")
+            if cr_event and hasattr(cr_event,"selection") and cr_event.selection.get("points"):
+                clicked = cr_event.selection["points"][0].get("text","")
+                if clicked:
+                    st.session_state["crypto_highlight"] = clicked
+                    st.toast(f"📍 {clicked} highlighted in table below", icon="₿")
+
+            leading = [(rrg_labels[i],rrg_x[i],rrg_y[i]) for i in range(len(rrg_x)) if rrg_x[i]>0 and rrg_y[i]>0]
+            if leading:
+                leading.sort(key=lambda x: x[1]+x[2], reverse=True)
+                st.markdown("**🟢 Leading (outperforming BTC + positive momentum):** "
+                           + ", ".join(f"**{c[0]}**" for c in leading[:10]))
+            improving = [(rrg_labels[i],rrg_x[i],rrg_y[i]) for i in range(len(rrg_x)) if rrg_x[i]<=0 and rrg_y[i]>0]
+            if improving:
+                improving.sort(key=lambda x: x[2], reverse=True)
+                st.markdown("**🔵 Improving (weak RS but recovering):** "
+                           + ", ".join(f"**{c[0]}**" for c in improving[:8]))
+        else:
+            st.info("Not enough RS data to build RRG.")
+
+st.markdown("---")
+
 # Full table
 st.markdown("#### Full Ranking")
 rows = []
@@ -487,7 +599,7 @@ for _, r in df_crypto.iterrows():
         "Risk":         fmt(r["risk"],"%",1),
     })
 
-st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=600)
+st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=600)
 
 # Export
 st.markdown("---")
