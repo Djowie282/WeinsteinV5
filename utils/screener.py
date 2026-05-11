@@ -391,6 +391,15 @@ SECTORS = {
     "XLV": "Health Care", "XLI": "Industrials", "XLY": "Consumer Discretionary",
     "XLP": "Consumer Staples", "XLU": "Utilities", "XLRE": "Real Estate",
     "XLB": "Materials", "XLC": "Communication Services",
+    # Thematic ETFs
+    "SMH":  "Semiconductors (SMH)",
+    "SOXX": "Semiconductors (SOXX)",
+    "UFO":  "Space (UFO)",
+    "ARKK": "Innovation (ARKK)",
+    "XBI":  "Biotech (XBI)",
+    "ITB":  "Homebuilders (ITB)",
+    "XOP":  "Oil & Gas E&P (XOP)",
+    "GDX":  "Gold Miners (GDX)",
 }
 
 SECTOR_STOCKS = {
@@ -417,4 +426,21 @@ SECTOR_STOCKS = {
               "NUE","STLD","VMC","MLM","CF","MOS","RPM","IFF","ALB","FMC"],
     "XLC":  ["META","GOOGL","GOOG","NFLX","TMUS","DIS","VZ","T","CMCSA","EA",
               "TTWO","OMC","IPG","CHTR","FOXA","WBD","LYV","ROKU","PINS","SNAP","TTD"],
+    # Thematic ETFs — top holdings as proxy universe
+    "SMH":  ["NVDA","TSM","AVGO","AMD","ASML","TXN","QCOM","MU","AMAT","LRCX",
+              "KLAC","ADI","MCHP","ON","MRVL","NXPI","STMicroelectronics","ARM","INTC","WOLF"],
+    "SOXX": ["NVDA","AVGO","AMD","QCOM","TXN","AMAT","LRCX","KLAC","MU","ADI",
+              "MCHP","ON","MRVL","NXPI","ASML","ARM","INTC","SWKS","QRVO","CRUS"],
+    "UFO":  ["RKLB","ASTS","KTOS","BWXT","MAXR","MNTS","SPIR","OSAT","RDW","SATL",
+              "LMT","BA","NOC","RTX","JOBY","ACHR","LILM","ASTR","VORB","SFET"],
+    "ARKK": ["TSLA","ROKU","COIN","SQ","TDOC","SHOP","ZM","SPOT","TWLO","PATH",
+              "U","EXAS","PACB","BEAM","CRSP","NTLA","FATE","RXRX","PSTG","HOOD"],
+    "XBI":  ["MRNA","VRTX","REGN","BIIB","ALNY","BMRN","ARWR","CRSP","BEAM","NTLA",
+              "SRPT","EXEL","IONS","RCKT","FATE","EDIT","RXRX","ACAD","SAGE","INVA"],
+    "ITB":  ["DHI","LEN","TOL","PHM","NVR","MDC","TMHC","MTH","LGIH","CCS",
+              "HD","LOW","SHW","MAS","FBHS","AWI","TREX","BLDR","LPX","UFPI"],
+    "XOP":  ["XOM","CVX","COP","EOG","OXY","DVN","FANG","MRO","APA","AR",
+              "EQT","CTRA","RRC","SWN","MTDR","VTLE","SM","PDCE","ESTE","BATL"],
+    "GDX":  ["NEM","GOLD","AEM","AGI","KGC","AU","WPM","FNV","RGLD","EGO",
+              "PAAS","MAG","AG","SSRM","HL","EXK","OR","BTG","TORR","GATO"],
 }
